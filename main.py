@@ -2,14 +2,18 @@ import pygame
 from pygame.locals import *
 import math
 
+GRAVITY_CONSTANT = 1 # units pixels / frame squared
+
 class Physics_Object(pygame.sprite.Sprite):
-    def __init__(self, colour, width, height):
+    def __init__(self, colour, width, height, mass):
         pygame.sprite.Sprite.__init__(self)
 
         self.image = pygame.Surface((width, height))
         self.image.fill(colour)
 
         self.rect = self.image.get_rect()
+
+        self.mass = mass
 
     def draw(self, screen):
         screen.blit(self.image, (self.rect.x, self.rect.y))
@@ -18,21 +22,34 @@ class Physics_Object(pygame.sprite.Sprite):
         self.rect.x += v * math.cos(theta) # angle is measured in radians
         self.rect.y += v * math.sin(theta) * -1 # always multiply y value by negative 1 because coordinate axis is flipped
 
+    def apply_forces(self, external = ()):
+        #gravity done first because everything has gravity
+        f = GRAVITY_CONSTANT * self.mass # gravity is always down so angle is 3pi/2
+        theta = 3 * math.pi / 2
+
+        self.move(f, theta)
+
+
+
 class Player(Physics_Object):
-    def __init__(self, colour, width, height, x, y):
-        Physics_Object.__init__(self, colour, width, height)
+    def __init__(self, colour, width, height, mass):
+        Physics_Object.__init__(self, colour, width, height, mass)
 
-        self.rect.x = x
-        self.rect.y = y
+        self.left = False
+        self.right = False
+        self.current = "right"
 
-    def player_move(self, walking):
-        if walking == 0:
+    def player_move(self):
+        if not self.right and not self.left:
             return
-        
+
         theta = 0
-        if walking == -1:
+        if self.current == "left" and self.left:
             theta = math.pi
-        self.move(4, theta)
+        if self.current == "right" and self.right:
+            theta = 0
+        
+        self.move(1, theta)
 
 
     
@@ -40,7 +57,7 @@ class Player(Physics_Object):
 def main():
     # Initialise screen
     pygame.init()
-    screen = pygame.display.set_mode((500, 500))
+    screen = pygame.display.set_mode((800, 800))
     pygame.display.set_caption('RIGID BODY SIMULATOR')
 
     # Fill background
@@ -51,11 +68,10 @@ def main():
     CENTERX = background.get_rect().centerx
     CENTERY = background.get_rect().centery
 
-    floor = pygame.Rect(0, 400, 500, 100)
+    floor = pygame.Rect(0, 700, 800, 100)
     pygame.draw.rect(background, (0, 100, 0), floor)
 
-    testball = Player((0, 0, 0), 50, 50, CENTERX, CENTERY)
-
+    testball = Player((0, 0, 0), 50, 50, 1)
     # # Display some text
     # font = pygame.font.Font(None, 36)
     # text = font.render("Hello There", 1, (10, 10, 10))
@@ -69,21 +85,26 @@ def main():
 
     # Event loop
     while True:
-        walking = 0
-
         for event in pygame.event.get():
             if event.type == QUIT:
                 return
-            elif event.type == KEYDOWN:
+            if event.type == KEYDOWN:
                 if event.key == K_RIGHT:
-                    walking = 1
-                elif event.key == K_LEFT:
-                    walking = -1
-            elif event.type == KEYUP:
-                if event.key == K_RIGHT or event.key == K_LEFT:
-                    walking = 0
+                    testball.right = True
+                    testball.current = "right"
+                if event.key == K_LEFT:
+                    testball.left = True
+                    testball.current = "left"
+            if event.type == KEYUP:
+                if event.key == K_RIGHT:
+                    testball.right = False
+                    testball.current = "left"
+                if event.key == K_LEFT:
+                    testball.left = False
+                    testball.current = "right"
 
-        testball.player_move(walking)
+        testball.player_move()
+        testball.apply_forces()
 
         screen.blit(background, (0, 0))
         testball.draw(screen)
