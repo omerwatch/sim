@@ -2,7 +2,7 @@ import pygame
 from pygame.locals import *
 import math
 
-GRAVITY_CONSTANT = 0.1 # units pixels / frame squared
+GRAVITY_CONSTANT = 200
 
 class Physics_Object(pygame.sprite.Sprite):
     def __init__(self, colour, width, height, mass):
@@ -15,72 +15,52 @@ class Physics_Object(pygame.sprite.Sprite):
 
         self.mass = mass
 
-        self.v = 0
-        self.vtheta = 0
+        self.pos = [0.0, 0.0]
+        self.v = [0.0, 0.0]
+
+        self.forces = list()
 
     def draw(self, screen):
+        self.rect.x = int(self.pos[0])
+        self.rect.y = int(self.pos[1])
+
         screen.blit(self.image, (self.rect.x, self.rect.y))
 
-    def move(self):
-        self.rect.x += self.v * math.cos(self.vtheta) # angle is measured in radians
-        self.rect.y += self.v * math.sin(self.vtheta)
+    def move(self, dt):
+        self.pos[0] += self.v[0] * dt
+        self.pos[1] += self.v[1] * dt
 
-        print(self.v, self.vtheta)
-        print("position", self.rect.x, self.rect.y)
+    def apply_forces(self, dt):
+        f = [0.0, 0.0]
 
-    def apply_forces(self, external = ()):
-        f = GRAVITY_CONSTANT * self.mass
-        theta = math.pi / 2
+        for fx, fy in self.forces:
+            f[0] += fx
+            f[1] += fy
 
-        vx = self.v * math.cos(self.vtheta) + f * math.cos(theta)
-        vy = self.v * math.sin(self.vtheta) + f * math.sin(theta)
+        self.v[0] += f[0] / self.mass * dt
+        self.v[1] += f[1] / self.mass * dt
 
-        self.v = math.sqrt(vx**2 + vy**2)
-        self.vtheta = math.atan2(vy, vx) 
-
-        self.move()
-
-
+        self.move(dt)
 
 class Player(Physics_Object):
     def __init__(self, colour, width, height, mass):
         Physics_Object.__init__(self, colour, width, height, mass)
 
-        self.left = False
-        self.right = False
-        self.current = "right"
-
-    # def player_move(self):
-    #     if not self.right and not self.left:
-    #         return
-
-    #     theta = 0
-    #     if self.current == "left" and self.left:
-    #         theta = math.pi
-    #     if self.current == "right" and self.right:
-    #         theta = 0
-        
-    #     self.move(1, theta)
+        self.forces.append((0, GRAVITY_CONSTANT * self.mass))
 
 class Immovable_Object(Physics_Object):
-    def __init__(self, colour, width, height, x, y):
-        Physics_Object.__init__(self, colour, width, height, 0)
+    def __init__(self, colour, width, height, mass, x, y):
+        Physics_Object.__init__(self, colour, width, height, mass)
 
-        self.rect.x = x
-        self.rect.y = y
-
-    def move(self):
-        self.v = 0
-        self.vtheta = 0
-
-
-    
+        self.pos = [x, y]    
 
 def main():
     # Initialise screen
     pygame.init()
     screen = pygame.display.set_mode((800, 800))
     pygame.display.set_caption('RIGID BODY SIMULATOR')
+
+    clock = pygame.time.Clock()
 
     # Fill background
     background = pygame.Surface(screen.get_size())
@@ -93,11 +73,9 @@ def main():
     # floor = pygame.Rect(0, 700, 800, 100)
     # pygame.draw.rect(background, (0, 100, 0), floor)
 
-    floor = Immovable_Object((0, 100, 0), 800, 100, 0, 700)
+    testball = Player((0, 0, 0), 50, 50, 10)
 
-    testball = Player((0, 0, 0), 50, 50, 1)
-
-    framecounter = 0
+    floor = Immovable_Object((0, 100, 0), 800, 100, 1000, 0, 700)
 
     # # Display some text
     # font = pygame.font.Font(None, 36)
@@ -112,35 +90,19 @@ def main():
 
     # Event loop
     while True:
+        dt = clock.tick() / 1000
+
         for event in pygame.event.get():
             if event.type == QUIT:
                 return
-            # if event.type == KEYDOWN:
-            #     if event.key == K_RIGHT:
-            #         testball.right = True
-            #         testball.current = "right"
-            #     if event.key == K_LEFT:
-            #         testball.left = True
-            #         testball.current = "left"
-            # if event.type == KEYUP:
-            #     if event.key == K_RIGHT:
-            #         testball.right = False
-            #         testball.current = "left"
-            #     if event.key == K_LEFT:
-            #         testball.left = False
-            #         testball.current = "right"
 
-        # testball.player_move()
-        if framecounter == 10:
-            testball.apply_forces()
-            floor.apply_forces()
-            # make a function that applies forces to all the physics objects inside of a list
-            framecounter = -1
-        framecounter += 1
+        testball.apply_forces(dt)
+        floor.apply_forces(dt)
 
         screen.blit(background, (0, 0))
         testball.draw(screen)
         floor.draw(screen)
+
         pygame.display.flip()
 
 
