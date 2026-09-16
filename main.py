@@ -1,8 +1,46 @@
 import pygame
 from pygame.locals import *
 import math
+# from scale import Scale
 
-GRAVITY_CONSTANT = 200
+GRAVITY_CONSTANT = 9.81
+PIXELS_PER_METER = 25
+SCREEN_X = 800
+SCREEN_Y = 800
+
+class Scales(pygame.sprite.Sprite):
+    def __init__(self, colour, y):
+        pygame.sprite.Sprite.__init__(self)
+
+        self.image = pygame.Surface((30, 100))
+        self.image.fill(colour)
+
+        x = SCREEN_X - 30
+
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
+
+    def initialize():
+        intervals = SCREEN_Y / 100
+
+        i = 0
+        arr = list()
+        while i < intervals:
+            c = list()
+            if i % 3 == 0:
+                c = tuple([170, 0, 0])
+            if i % 3 == 1:
+                c = tuple([0, 170, 0])
+            if i % 3 == 2:
+                c = tuple([0, 0, 170])
+
+            s = Scales(c, 100 * i)
+            arr.append(s)
+
+            i += 1
+
+        return arr 
 
 class Vectors():
     def dotproduct(v1, v2):
@@ -25,8 +63,6 @@ class Physics_Object(pygame.sprite.Sprite):
         self.pos = [0.0, 0.0]
         self.v = [0.0, 0.0]
 
-        self.cidx = -1
-
         self.normal = [0.0, 1.0]
         self.normal_magnitude = Vectors.magnitude(self.normal)
 
@@ -39,8 +75,8 @@ class Physics_Object(pygame.sprite.Sprite):
         self.pos[0] += self.v[0] * dt
         self.pos[1] += self.v[1] * dt
 
-        self.rect.x = int(self.pos[0])
-        self.rect.y = int(self.pos[1])
+        self.rect.x = int(self.pos[0] * PIXELS_PER_METER)
+        self.rect.y = int(self.pos[1] * PIXELS_PER_METER)
 
     def apply_forces(self, dt):
         f = [0.0, 0.0]
@@ -52,12 +88,9 @@ class Physics_Object(pygame.sprite.Sprite):
         self.v[0] += f[0] / self.mass * dt
         self.v[1] += f[1] / self.mass * dt
 
-        self.forces = self.forces[0:self.cidx]
-
         self.move(dt)
 
     def check_collision(self, physics_objects, dt):
-        self.cidx = len(self.forces)
         for o in physics_objects:
             if o is self:
                 continue
@@ -65,11 +98,11 @@ class Physics_Object(pygame.sprite.Sprite):
                 # costheta = Vectors.dotproduct(self.normal, o.normal) / self.normal_magnitude / o.normal_magnitude
                 # print("cosine between normal vectors:", costheta)
                 if isinstance(o, Immovable_Object):
-                    # colliding with the ground so reaction force from IMPULSE (integral of F dt but assuming F is constant for now)
-                    f = [self.mass * self.v[0] / dt, self.mass * self.v[1] / dt]
-                    self.forces.append(f)
-                    print(f)
+                    # ASSUME ELASTIC COLLISION SO NO KINETIC ENERGY LOST
+                    self.v[1] = self.v[1] * -1
 
+                    self.pos[1] = o.pos[1] - self.rect.height
+                    self.rect.y = self.pos[1]
 
 class Player(Physics_Object):
     def __init__(self, colour, width, height, mass):
@@ -81,12 +114,14 @@ class Immovable_Object(Physics_Object):
     def __init__(self, colour, width, height, mass, x, y):
         Physics_Object.__init__(self, colour, width, height, mass)
 
-        self.pos = [x, y]    
+        self.pos = [x / PIXELS_PER_METER, y / PIXELS_PER_METER]    
+        self.rect.x = x
+        self.rect.y = y
 
 def main():
     # Initialise screen
     pygame.init()
-    screen = pygame.display.set_mode((800, 800))
+    screen = pygame.display.set_mode((SCREEN_X, SCREEN_Y))
     pygame.display.set_caption('RIGID BODY SIMULATOR')
 
     clock = pygame.time.Clock()
@@ -108,6 +143,8 @@ def main():
 
     objects = [testball, floor]
 
+    scales = Scales.initialize()
+
     # # Display some text
     # font = pygame.font.Font(None, 36)
     # text = font.render("Hello There", 1, (10, 10, 10))
@@ -121,7 +158,7 @@ def main():
 
     # Event loop
     while True:
-        dt = clock.tick() / 1000
+        dt = clock.tick(60) / 1000
 
         for event in pygame.event.get():
             if event.type == QUIT:
@@ -130,9 +167,12 @@ def main():
         screen.blit(background, (0, 0))
 
         for object in objects:
-            object.check_collision(objects, dt)
+            # object.check_collision(objects, dt)
             object.apply_forces(dt)
             object.draw(screen)
+
+        for scale in scales:
+            screen.blit(scale.image, (scale.rect.x, scale.rect.y))
 
         pygame.display.flip()
 
