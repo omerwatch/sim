@@ -1,5 +1,6 @@
 class Constants:
-    GRAVITY_CONSTANT = 9.
+    GRAVITY_CONSTANT = 9.81
+    KINETIC_ENERGY_THRESHOLD = 5.0
 
     # might want user to change these later
     PIXELS_PER_METER = 25

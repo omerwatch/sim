@@ -26,6 +26,10 @@ class Physics_Object(pygame.sprite.Sprite):
         self.width = width
         self.height = height
 
+        self.is_sleeping = False
+        self.allowed_sleep = False
+        self.kinetic_energy = list()
+
         self.pos = [0.0, 0.0]
         self.v = [0.0, 0.0]
 
@@ -57,6 +61,14 @@ class Physics_Object(pygame.sprite.Sprite):
         self.v[0] += f[0] / self.mass * dt
         self.v[1] += f[1] / self.mass * dt
 
+        if self.is_sleeping:
+            self.v[0] = 0
+            self.v[1] = 0
+
+        self.kinetic_energy.append(0.5 * self.mass * Vectors.magnitude(self.v) ** 2)
+        if len(self.kinetic_energy) > 10:
+            self.kinetic_energy.pop(0)
+
         self.move(dt)
 
         self.forces = list()
@@ -71,25 +83,41 @@ class Physics_Object(pygame.sprite.Sprite):
                 if isinstance(o, Immovable_Object):
                     # modelling ground as a spring with a restoring and damping force
                     pen = [0.0, 0.0]
-                    pen[1] = o.pos[1] - (self.pos[1] - self.height)
+                    pen[1] = self.pos[1] + self.height / Constants.PIXELS_PER_METER - o.pos[1]
 
-                    f_restoring = o.k * pen[1]
-                    f_damping = o.c * self.v[1]
+                    f_restoring = o.k * pen[1] * -1
+                    f_damping = o.c * self.v[1] * -1
 
-                    f_spring = abs(f_restoring - f_damping) * -1
-                    if f_damping > f_restoring:
+                    f_spring = f_restoring + f_damping
+                    if f_spring > 0:
                         f_spring = 0
 
-                    i = 0
-                    first_frame = True
-                    for fx, fy, id in self.forces:
-                        if id == "ground contact force":
-                            first_frame = False
-                            self.forces[i] = ((0, f_spring), "ground contact force")
-                        i += 1
+                    self.allowed_sleep = True
+                    self.check_kinetic_energy()
 
-                    if first_frame:
-                        self.forces.append((0, f_spring, "ground contact force"))
+                    # i = 0
+                    # first_frame = True
+                    # for fx, fy, id in self.forces:
+                    #     if id == "ground contact force":
+                    #         first_frame = False
+                    #         self.forces[i] = ((0, f_spring), "ground contact force")
+                    #     i += 1
+
+                    # if first_frame:
+                    self.forces.append((0, f_spring, "ground contact force"))
+
+    def check_kinetic_energy(self):
+        if not self.allowed_sleep:
+            return
+
+        for e in self.kinetic_energy:
+            if e > Constants.KINETIC_ENERGY_THRESHOLD:
+                self.is_sleeping = False
+                print(e)
+                return
+
+        self.is_sleeping = True
+
                     
 
 class Player(Physics_Object):
@@ -104,8 +132,8 @@ class Immovable_Object(Physics_Object):
         self.rect.x = x
         self.rect.y = y
 
-        self.k = 100.0
-        self.c = 1.0
+        self.k = 40000.0
+        self.c = 400.0
 
 def main():
     # Initialise screen
@@ -126,7 +154,7 @@ def main():
     # floor = pygame.Rect(0, 700, 800, 100)
     # pygame.draw.rect(background, (0, 100, 0), floor)
 
-    testball = Player((0, 0, 0), 50, 50, 10)
+    testball = Player((0, 0, 0), 50, 100, 10)
 
     floor = Immovable_Object((0, 100, 0), 800, 100, 1000, 0, 700)
 
@@ -148,7 +176,7 @@ def main():
 
     # Event loop
     while True:
-        dt = clock.tick(60) / 1000
+        dt = clock.tick(120) / 1000
 
         for event in pygame.event.get():
             if event.type == QUIT:
@@ -157,8 +185,9 @@ def main():
         screen.blit(background, (0, 0))
 
         for object in objects:
-            object.check_collision(objects)
-            object.apply_forces(dt)
+            if not object.is_sleeping:
+                object.check_collision(objects)
+                object.apply_forces(dt)
             object.draw(screen)
 
         for scale in scales:
