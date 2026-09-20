@@ -4,6 +4,7 @@ import math
 
 from scales import Scales
 from constants import Constants
+from forcelines import Force_Line
 
 class Vectors():
     def dotproduct(v1, v2):
@@ -26,17 +27,18 @@ class Physics_Object(pygame.sprite.Sprite):
         self.width = width
         self.height = height
 
-        self.is_sleeping = False
-        self.allowed_sleep = False
-        self.kinetic_energy = list()
-
         self.pos = [0.0, 0.0]
         self.v = [0.0, 0.0]
+
+        self.v_before_impact = 0.0
+        self.impacting = False
+        self.is_sleeping = False
 
         self.normal = [0.0, 1.0]
         self.normal_magnitude = Vectors.magnitude(self.normal)
 
         self.forces = list()
+        self.force_lines = list()
 
     def draw(self, screen):
         screen.blit(self.image, (self.rect.x, self.rect.y))
@@ -48,9 +50,15 @@ class Physics_Object(pygame.sprite.Sprite):
         self.rect.x = int(self.pos[0] * Constants.PIXELS_PER_METER)
         self.rect.y = int(self.pos[1] * Constants.PIXELS_PER_METER)
 
+        Force_Line.move_all(self.force_lines, self.v, dt)
+
     def apply_forces(self, dt):
         if isinstance(self, Player):
             self.forces.append((0, Constants.GRAVITY_CONSTANT * self.mass, "gravity"))
+        if self.is_sleeping:
+            self.normal_force()
+
+        Force_Line.initialize_force_lines(self.forces, self.force_lines, self.pos, self.width, self.height, self.is_sleeping)
 
         f = [0.0, 0.0]
 
@@ -61,26 +69,22 @@ class Physics_Object(pygame.sprite.Sprite):
         self.v[0] += f[0] / self.mass * dt
         self.v[1] += f[1] / self.mass * dt
 
-        if self.is_sleeping:
-            self.v[0] = 0
-            self.v[1] = 0
-
-        self.kinetic_energy.append(0.5 * self.mass * Vectors.magnitude(self.v) ** 2)
-        if len(self.kinetic_energy) > 10:
-            self.kinetic_energy.pop(0)
-
         self.move(dt)
+
+        if not self.impacting:
+            self.v_before_impact = self.v[1]
 
         self.forces = list()
 
-    def check_collision(self, physics_objects):
+    def check_collision(self, physics_objects, dt):
+        self.impacting = False
         for o in physics_objects:
             if o is self:
                 continue
             elif self.rect.colliderect(o.rect):
                 # costheta = Vectors.dotproduct(self.normal, o.normal) / self.normal_magnitude / o.normal_magnitude
                 # print("cosine between normal vectors:", costheta)
-                if isinstance(o, Immovable_Object):
+                if isinstance(o, Immovable_Object) and not self.is_sleeping:
                     # modelling ground as a spring with a restoring and damping force
                     pen = [0.0, 0.0]
                     pen[1] = self.pos[1] + self.height / Constants.PIXELS_PER_METER - o.pos[1]
@@ -92,37 +96,31 @@ class Physics_Object(pygame.sprite.Sprite):
                     if f_spring > 0:
                         f_spring = 0
 
-                    self.allowed_sleep = True
-                    self.check_kinetic_energy()
+                    # check to see if ball will speed up from hitting the ground because thats impossible in real life
+                    if self.v[1] + f_spring / self.mass * dt > self.v_before_impact:
+                        f_spring = 0
 
-                    # i = 0
-                    # first_frame = True
-                    # for fx, fy, id in self.forces:
-                    #     if id == "ground contact force":
-                    #         first_frame = False
-                    #         self.forces[i] = ((0, f_spring), "ground contact force")
-                    #     i += 1
+                    # project the velocity vector of self onto the normal vector of o, then get the magnitude
+                    if abs(self.v[1]) < Constants.VELOCITY_THRESHOLD and pen[1] < 0.4:
+                        #snap the position of the object
+                        self.pos[1] = o.pos[1] - self.height / Constants.PIXELS_PER_METER
+                        self.v[1] = 0
+                        self.is_sleeping = True
+                        continue
 
-                    # if first_frame:
+                    self.impacting = True
                     self.forces.append((0, f_spring, "ground contact force"))
 
-    def check_kinetic_energy(self):
-        if not self.allowed_sleep:
-            return
-
-        for e in self.kinetic_energy:
-            if e > Constants.KINETIC_ENERGY_THRESHOLD:
-                self.is_sleeping = False
-                print(e)
-                return
-
-        self.is_sleeping = True
-
-                    
+    def normal_force(self):
+        self.forces.append((0, -1 * Constants.GRAVITY_CONSTANT * self.mass, "normal force"))
 
 class Player(Physics_Object):
-    def __init__(self, colour, width, height, mass):
+    def __init__(self, colour, width, height, mass, x, y):
         Physics_Object.__init__(self, colour, width, height, mass)
+
+        self.pos = [x / Constants.PIXELS_PER_METER, y / Constants.PIXELS_PER_METER]    
+        self.rect.x = x
+        self.rect.y = y
 
 class Immovable_Object(Physics_Object):
     def __init__(self, colour, width, height, mass, x, y):
@@ -154,11 +152,12 @@ def main():
     # floor = pygame.Rect(0, 700, 800, 100)
     # pygame.draw.rect(background, (0, 100, 0), floor)
 
-    testball = Player((0, 0, 0), 50, 100, 10)
+    testball = Player((0, 0, 0), 10, 10, 10, 0, 0)
+    testball2 = Player((250, 250, 250), 10, 10, 10, 400, 0)
 
     floor = Immovable_Object((0, 100, 0), 800, 100, 1000, 0, 700)
 
-    objects = [testball, floor]
+    objects = [floor, testball2, testball]
 
     scales = Scales.initialize()
     scales_text = Scales.scales_text()
@@ -185,10 +184,12 @@ def main():
         screen.blit(background, (0, 0))
 
         for object in objects:
-            if not object.is_sleeping:
-                object.check_collision(objects)
-                object.apply_forces(dt)
+            object.check_collision(objects, dt)
+            object.apply_forces(dt)
             object.draw(screen)
+
+            for fl in object.force_lines:
+                fl.draw(screen)
 
         for scale in scales:
             screen.blit(scale.image, (scale.rect.x, scale.rect.y))
