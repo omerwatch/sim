@@ -1,6 +1,6 @@
 class Constants:
     GRAVITY_CONSTANT = 9.81
-    VELOCITY_THRESHOLD = 0.5
+    VELOCITY_THRESHOLD = 0.4
 
     # might want user to change these later
     PIXELS_PER_METER = 25
