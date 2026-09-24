@@ -47,6 +47,8 @@ class Physics_Object(pygame.sprite.Sprite):
         Force_Line.move_all(self.force_lines, self.v, dt)
 
     def apply_forces(self, dt):
+        if isinstance(self, Immovable_Object):
+            return
         if isinstance(self, Player):
             self.forces.append((0, Constants.GRAVITY_CONSTANT * self.mass, "gravity"))
         if self.is_sleeping:
@@ -69,12 +71,13 @@ class Physics_Object(pygame.sprite.Sprite):
         self.forces = list()
 
     def check_collision(self, physics_objects, dt):
+        if isinstance(self, Immovable_Object):
+            return
+
         for o in physics_objects:
             if o is self:
                 continue
-            elif self.rect.colliderect(o.rect):
-                # costheta = Vectors.dotproduct(self.normal, o.normal) / self.normal_magnitude / o.normal_magnitude
-                # print("cosine between normal vectors:", costheta)
+            elif isinstance(o, Immovable_Object) and self.rect.clipline(o.v1, o.v2):
                 if isinstance(o, Immovable_Object) and not self.is_sleeping:
                     # spring force needs to push the object OUT of the ground, whichever direction that is
                     # so by finding the x vector in kx we know that the force is in the opposite 
@@ -83,14 +86,13 @@ class Physics_Object(pygame.sprite.Sprite):
                     vn, vt = Vectors.matrix_vector_multiplication(self.v, o.mx_standard_to_basis)
 
                     pn, pt = Vectors.matrix_vector_multiplication(self.pos, o.mx_standard_to_basis)
-                    opn, opt = Vectors.matrix_vector_multiplication(o.pos, o.mx_standard_to_basis)
                     whn, wht = Vectors.matrix_vector_multiplication([self.width, self.height], o.mx_standard_to_basis)
 
                     delta = 0.0
 
-                    if pn > opn:
+                    if pn > o.pn:
                         # this means that the ground is underneath the physics object
-                        delta = pn + whn / Constants.PIXELS_PER_METER - opn
+                        delta = pn + whn / Constants.PIXELS_PER_METER - o.pn
 
                     # modelling ground as a spring with a restoring and damping force
                     # delta = [0.0, 0.0]
@@ -109,7 +111,7 @@ class Physics_Object(pygame.sprite.Sprite):
                     if abs(vn) < Constants.VELOCITY_THRESHOLD and delta < 0.1:
                         #snap the position of the object and set velocity to 0 in normal direction somehow
                         self.v = Vectors.matrix_vector_multiplication([0, vt], o.mx_basis_to_standard)
-                        self.snap_position(Vectors.matrix_vector_multiplication([opn - whn / Constants.PIXELS_PER_METER, pt], o.mx_basis_to_standard))
+                        self.snap_position(Vectors.matrix_vector_multiplication([o.pn - whn / Constants.PIXELS_PER_METER, pt], o.mx_basis_to_standard))
                         self.is_sleeping = True
                         self.resting_on.append(o)
                         continue
@@ -149,20 +151,41 @@ class Player(Physics_Object):
         self.rect.y = y
 
 class Immovable_Object(Physics_Object):
-    def __init__(self, colour, width, height, mass, x, y, normal = [0, -1]):
-        Physics_Object.__init__(self, colour, width, height, mass)
-
-        self.pos = [x / Constants.PIXELS_PER_METER, y / Constants.PIXELS_PER_METER]    
-        self.rect.x = x
-        self.rect.y = y
+    def __init__(self, colour, height, v1, v2, shape = 'rect'):
+        # v1 is the top left position vector, v2 is the top right position vector (make a line together)
+        self.v1 = v1
+        self.v2 = v2
+        self.disp = [self.v2[0] - self.v1[0], self.v2[1] - self.v1[1]]
 
         self.k = 40000.0
         self.c = 400.0
 
-        self.normal = normal
+        self.normal = Vectors.scalar_vector_multiplication(Vectors.matrix_vector_multiplication(self.disp, [[0, -1], [1, 0]]), 1  / Vectors.magnitude(self.disp))
 
         self.mx_basis_to_standard = [self.normal, Vectors.return_perpendicular(self.normal)]
         self.mx_standard_to_basis = Vectors.return_transverse(self.mx_basis_to_standard) # QR Factorization
+
+        self.pn = Vectors.matrix_vector_multiplication(self.v1, self.mx_standard_to_basis)[0] / Constants.PIXELS_PER_METER
+
+        self.shape = shape
+        self.colour = colour
+        if self.shape == 'rect':
+            self.image = pygame.Surface((self.disp[0], height))
+            self.image.fill(colour)
+
+            self.rect = self.image.get_rect()
+
+            self.rect.x = self.v1[0]
+            self.rect.y = self.v1[1]
+        else:
+            # same x-value as the top most point and same y-value as the bottom most point
+            self.v3 = [self.v1[0], self.v2[1]]
+
+    def draw(self, screen):
+        if self.shape == 'rect':
+            super().draw(screen)
+        if self.shape == 'triangle':
+            pygame.draw.polygon(screen, self.colour, [self.v1, self.v2, self.v3])
 
 def main():
     # Initialise screen
@@ -186,8 +209,7 @@ def main():
     testball = Player((0, 0, 0), 10, 10, 10, 0, 0)
     testball2 = Player((250, 250, 250), 10, 10, 10, 400, 0)
 
-    floor = Immovable_Object((0, 100, 0), 800, 100, 1000, 0, 700, [2**(1/2) / 2, -2**(1/2) / 2])
-    # [2**(1/2) / 2, -2**(1/2) / 2]
+    floor = Immovable_Object((0, 100, 0), 100, (0, 400), (800, 800), 'triangle')
 
     objects = [floor,  testball]
 
@@ -219,6 +241,9 @@ def main():
             object.check_collision(objects, dt)
             object.apply_forces(dt)
             object.draw(screen)
+
+            if isinstance(object, Immovable_Object):
+                continue
 
             for fl in object.force_lines:
                 fl.draw(screen)
